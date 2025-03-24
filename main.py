@@ -57,14 +57,17 @@ def send_token_info(token):
     
     distribute_url = f"https://distributesol.io/token/{token['token_mint_address']}"
     dexscreener_url = f"https://dexscreener.com/solana/{token['token_mint_address']}"
+    jupiter_url = f"https://jup.ag/swap/SOL-{token['token_mint_address']}"
     solscan_contract = f"https://solscan.io/token/{token['token_mint_address']}"
     solscan_dev_wallet = f"https://solscan.io/address/{token['dev_wallet_address']}"
 
     buttons = {
         "inline_keyboard": [
             [
-                {"text": "💰 Buy on Distribute", "url": distribute_url},
-                {"text": "📊 DexScreener", "url": dexscreener_url}
+                {"text": "Check on Distribute", "url": distribute_url},
+                {"text": "DexS", "url": dexscreener_url},
+                {"text": "Jupiter", "url": jupiter_url}
+
             ]
         ]
     }
