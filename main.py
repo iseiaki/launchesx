@@ -132,11 +132,11 @@ def monitor_new_tokens():
 
 def graceful_shutdown(signum, frame):
     print("Shutting down gracefully...")
-    send_telegram_message("Bot is shutting down gracefully...")
+    send_telegram_message("Kebab fetcher bot is shutting down...")
     sys.exit(0)
 
 if __name__ == "__main__":
-    send_telegram_message("🤖 Bot started successfully!")
+    send_telegram_message("Started fetching 100x kebabs successfully!")
     signal.signal(signal.SIGINT, graceful_shutdown)
     signal.signal(signal.SIGTERM, graceful_shutdown)
     monitor_new_tokens()
