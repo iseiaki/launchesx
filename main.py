@@ -5,6 +5,7 @@ import sys
 from dotenv import load_dotenv
 import os
 from datetime import datetime, timezone
+import re
 
 # Load environment variables from .env file
 load_dotenv()
@@ -53,8 +54,8 @@ def fetch_data():
         print(f"Error fetching data: {e}")
         return []
 
-def check_liquidity_locked(token_address):
-    """Check if liquidity is locked using DexScreener API"""
+def get_dex_data(token_address):
+    """Get comprehensive DexScreener data including liquidity and market cap"""
     try:
         dex_url = f"https://api.dexscreener.com/latest/dex/tokens/solana/{token_address}"
         response = requests.get(dex_url, timeout=10)
@@ -62,18 +63,43 @@ def check_liquidity_locked(token_address):
         
         if 'pairs' in data and len(data['pairs']) > 0:
             pair = data['pairs'][0]
-            # Check if liquidity is locked (common indicators)
-            if pair.get('info', {}).get('lock') or pair.get('liquidity', {}).get('locked'):
-                return True
-            # Check if liquidity is burned (dead address)
-            if pair.get('info', {}).get('burned') or 'burn' in pair.get('info', {}).get('description', '').lower():
-                return True
-        return False
+            return {
+                'liquidity': pair.get('liquidity', {}).get('usd'),
+                'market_cap': pair.get('fdv', 0),
+                'price': pair.get('priceUsd', 0),
+                'volume': pair.get('volume', {}).get('h24', 0),
+                'locked': pair.get('info', {}).get('lock') or pair.get('liquidity', {}).get('locked'),
+                'burned': pair.get('info', {}).get('burned') or 'burn' in pair.get('info', {}).get('description', '').lower()
+            }
+        return None
     except Exception as e:
-        print(f"Error checking liquidity: {e}")
+        print(f"Error getting Dex data: {e}")
+        return None
+
+def is_honeypot(token_address):
+    """Check if token might be a honeypot using Honeypot.is API"""
+    try:
+        honeypot_url = f"https://api.honeypot.is/v2/IsHoneypot?address={token_address}"
+        response = requests.get(honeypot_url, timeout=10)
+        data = response.json()
+        return data.get('honeypotResult', {}).get('isHoneypot', False)
+    except Exception as e:
+        print(f"Error checking honeypot: {e}")
         return False
 
-def calculate_safety_score(token):
+def format_currency(value):
+    """Format currency values in a human-readable way"""
+    if not value:
+        return "N/A"
+    
+    value = float(value)
+    if value >= 1_000_000:
+        return f"${value/1_000_000:.2f}M"
+    elif value >= 1_000:
+        return f"${value/1_000:.2f}K"
+    return f"${value:.2f}"
+
+def calculate_safety_score(token, dex_data):
     """
     Calculate a safety score (1-10) for a token based on available parameters
     """
@@ -95,8 +121,8 @@ def calculate_safety_score(token):
     social_score = 0
     socials_to_check = [
         ("website_url", "http"),
-        ("telegram_url", "https://t.me"),
-        ("x_account_url", "https://x.com"),
+        ("telegram_url", "t.me"),
+        ("x_account_url", "x.com"),
     ]
     
     for field, prefix in socials_to_check:
@@ -111,30 +137,28 @@ def calculate_safety_score(token):
     elif social_score < len(socials_to_check) * 0.33:
         score -= 1  # Missing most socials
     
-    # 3. Token Age (new tokens are riskier)
+    # 3. Liquidity Check (via DexScreener)
     try:
-        created_at = datetime.fromisoformat(token["created_at"])
-        age_hours = (datetime.now(timezone.utc) - created_at).total_seconds() / 3600
-        if age_hours < 2:
-            score -= 1  # Very new token
-        elif age_hours > 24:
-            score += 1  # Survived at least 1 day
+        if dex_data:
+            if dex_data.get('locked') or dex_data.get('burned'):
+                score += 2  # Bonus for locked liquidity
+            # Penalize low liquidity
+            liquidity = float(dex_data.get('liquidity', 0))
+            if liquidity < 1000:
+                score -= 2
+            elif liquidity < 5000:
+                score -= 1
+            elif liquidity > 25000:
+                score += 1
     except:
         pass
     
-    # 4. Liquidity Check (via DexScreener)
-    try:
-        if check_liquidity_locked(token["token_mint_address"]):
-            score += 2  # Bonus for locked liquidity
-    except:
-        pass
-    
-    # 5. Same wallet check (dev and distribution same wallet is risky)
+    # 4. Same wallet check (dev and distribution same wallet is risky)
     if token.get("dev_wallet_address") and token.get("distribution_wallet_address"):
         if token["dev_wallet_address"] == token["distribution_wallet_address"]:
             score -= 1
     
-    # 6. Website quality check
+    # 5. Website quality check
     if token.get("website_url"):
         website = token["website_url"].lower()
         if 'http://' in website and not 'https://':
@@ -142,8 +166,19 @@ def calculate_safety_score(token):
         if any(bad_word in website for bad_word in ['example.com', 'temp.com', 'placeholder']):
             score -= 2  # Placeholder website
     
+    # 6. Honeypot check
+    try:
+        if is_honeypot(token["token_mint_address"]):
+            score -= 3  # Big penalty for potential honeypot
+    except:
+        pass
+    
     # Ensure score stays within bounds
     return max(1, min(10, score))
+
+def format_contract_address(address):
+    """Format contract address for easy copying"""
+    return f"`{address}`"
 
 def send_token_info(token):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
@@ -154,8 +189,11 @@ def send_token_info(token):
     solscan_contract = f"https://solscan.io/token/{token['token_mint_address']}"
     solscan_dev_wallet = f"https://solscan.io/address/{token['dev_wallet_address']}"
 
-    # Calculate safety score
-    safety_score = calculate_safety_score(token)
+    # Get DexScreener data
+    dex_data = get_dex_data(token["token_mint_address"])
+    
+    # Calculate safety score with dex data
+    safety_score = calculate_safety_score(token, dex_data)
     
     # Get safety emoji and description
     if safety_score >= 8:
@@ -168,40 +206,59 @@ def send_token_info(token):
         safety_emoji = "🔴"
         safety_comment = "High Risk"
 
+    # Add honeypot warning if detected
+    honeypot_warning = ""
+    try:
+        if is_honeypot(token["token_mint_address"]):
+            honeypot_warning = "\n🚨 *HONEYPOT WARNING* - Potential scam token detected!"
+    except:
+        pass
+
+    # Prepare Dex data for display
+    liquidity = format_currency(dex_data.get('liquidity')) if dex_data else "N/A"
+    market_cap = format_currency(dex_data.get('market_cap')) if dex_data else "N/A"
+    price = f"${float(dex_data.get('price', 0)):.6f}" if dex_data else "N/A"
+    volume = format_currency(dex_data.get('volume')) if dex_data else "N/A"
+
     # Add safety details to caption
     caption = f"""
-🚀 New Token Launched On Distribute!
+🚀 New Token Launched On Distribute! 🚀
 
+📌 *Basic Info:*
 🌟 Token Name: {token["token_name"]}
 💲 Ticker: {token["token_ticker"]}
+💰 Price: {price}
+📈 MCap: {market_cap}
+💧 Liquidity: {liquidity}
+📊 24h Volume: {volume}
 
-{safety_emoji} *Safety Score: {safety_score}/10* - {safety_comment}
-🔍 *Risk Analysis:*
+{safety_emoji} Safety Score: {safety_score}/10 - {safety_comment}
+
+🔍 Risk Analysis:
 - Dev Fee: {token["developer_fee_percentage"]}% {'⚠️ (High)' if float(token["developer_fee_percentage"]) > 20 else ''}
-- {'🔒 Locked Liquidity' if check_liquidity_locked(token["token_mint_address"]) else '⚠️ Liquidity Not Verified'}
-- Age: {(datetime.now(timezone.utc) - datetime.fromisoformat(token["created_at"])).total_seconds()/3600:.1f} hours
+- {'🔒 Locked Liquidity' if dex_data and (dex_data.get('locked') or dex_data.get('burned')) else '⚠️ Liquidity Not Verified'}
+- Contract: {format_contract_address(token["token_mint_address"])}
 
-🔗 [Contract Address]({solscan_contract})
-🌐 [Website]({token["website_url"]})
-🐦 [Twitter]({token["x_account_url"]})
-💬 [Telegram]({token["telegram_url"]})
+🔗 Links:
+[View on Solscan]({solscan_contract}) | [Website]({token["website_url"]})
+[Twitter]({token["x_account_url"]}) | [Telegram]({token["telegram_url"]})
 
 🛠 [Dev Wallet]({solscan_dev_wallet})
 📅 Distribution: Every {token["distribution_interval"]} mins
+{honeypot_warning}
 
-📢 *Always DYOR before investing!*
+📢 Always DYOR before investing!
 """
 
     buttons = {
         "inline_keyboard": [
             [
-                {"text": "Check on Distribute", "url": distribute_url},
-                {"text": "DexScreener", "url": dexscreener_url},
-                {"text": "Jupiter", "url": jupiter_url}
+                {"text": "📝 Copy CA", "callback_data": f"copy_{token['token_mint_address']}"},
+                {"text": "DexS", "url": dexscreener_url}
             ],
             [
-                {"text": "🔍 Verify Liquidity", "url": dexscreener_url},
-                {"text": "📊 Check Contract", "url": solscan_contract}
+                {"text": "Jupiter", "url": jupiter_url},
+                {"text": "Distribute", "url": distribute_url}
             ]
         ]
     }
