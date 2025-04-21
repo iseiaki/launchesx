@@ -47,7 +47,8 @@ def fetch_data():
     try:
         response = requests.get(API_URL, headers=HEADERS)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        return data.get("tokens", [])  # Return the tokens list from the response
     except Exception as e:
         print(f"Error fetching data: {e}")
         return []
