@@ -55,47 +55,40 @@ def fetch_data():
 def send_token_info(token):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     
-    # Determine URL path based on token type
-    url_path = "jackpot" if token.get('token_type') == "Jackpot" else "token"
-    distribute_url = f"https://distributesol.io/{url_path}/{token['token_mint_address']}"
-    
-    dexscreener_url = f"https://dexscreener.com/solana/{token['token_mint_address']}"
-    jupiter_url = f"https://jup.ag/swap/SOL-{token['token_mint_address']}"
+    distribute_url = f"https://distributesol.io/bonding-token/{token['token_mint_address']}"
+    raydium = f"https://raydium.io/launchpad/token/?mint={token['token_mint_address']}"
     solscan_contract = f"https://solscan.io/token/{token['token_mint_address']}"
-    solscan_dev_wallet = f"https://solscan.io/address/{token['dev_wallet_address']}"
 
     buttons = {
         "inline_keyboard": [
             [
                 {"text": "Check on Distribute", "url": distribute_url},
-                {"text": "DexS", "url": dexscreener_url},
-                {"text": "Jupiter", "url": jupiter_url}
-
+                {"text": "Raydium", "url": raydium}
             ]
         ]
     }
 
     caption = f"""
-🚀 New Token Launched On Distribute!
+💵 New token launched on Distribute using bonding curve (SSLS) system. 💵
 
 🌟 Token Name: {token["token_name"]}
-💲 Ticker: {token["token_ticker"]}
+💲 Symbol: {token["token_symbol"]}
 
 🔗 Contract Address: `{token['token_mint_address']}`
+
 📊 [View on Solscan]({solscan_contract})
 🌐 [Website]({token["website_url"]})
-💬 [Join Telegram]({token["telegram_url"]})
+🐦 [Twitter]({token["x_account_url"]})
+💬 [Telegram]({token["telegram_url"]})
 
-🛠 Developer Fee: {token["developer_fee_percentage"]}%
-🔗 [Dev Wallet]({solscan_dev_wallet})
-📅 Distribution Interval: {token["distribution_interval"]} minutes
+💎 First Buy Amount: {"No first buy set" if token["first_buy_amount"] is None else f"{token['first_buy_amount']} SOL"}
 
-📢 Get in on the launch early!
+📢 DYOR & Get in on the launch early!
 """
 
     payload = {
         "chat_id": CHAT_ID,
-        "photo": token["image_url"],
+        "photo": token["logo_url"],
         "caption": caption,
         "parse_mode": "Markdown",
         "reply_markup": buttons
@@ -131,15 +124,15 @@ def monitor_new_tokens():
                     fetched_tokens[token_id] = token
                     send_token_info(token)
 
-        time.sleep(8)
+        time.sleep(2)
 
 def graceful_shutdown(signum, frame):
     print("Shutting down gracefully...")
-    send_telegram_message("Bot is shutting down gracefully...")
+    send_telegram_message("bot has shut down")
     sys.exit(0)
 
 if __name__ == "__main__":
-    send_telegram_message("🤖 Bot started successfully!")
+    send_telegram_message("bot has started ")
     signal.signal(signal.SIGINT, graceful_shutdown)
     signal.signal(signal.SIGTERM, graceful_shutdown)
     monitor_new_tokens()
