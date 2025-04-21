@@ -55,7 +55,10 @@ def fetch_data():
 def send_token_info(token):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     
-    distribute_url = f"https://distributesol.io/token/{token['token_mint_address']}"
+    # Determine URL path based on token type
+    url_path = "jackpot" if token.get('token_type') == "Jackpot" else "token"
+    distribute_url = f"https://distributesol.io/{url_path}/{token['token_mint_address']}"
+    
     dexscreener_url = f"https://dexscreener.com/solana/{token['token_mint_address']}"
     jupiter_url = f"https://jup.ag/swap/SOL-{token['token_mint_address']}"
     solscan_contract = f"https://solscan.io/token/{token['token_mint_address']}"
@@ -78,7 +81,8 @@ def send_token_info(token):
 🌟 Token Name: {token["token_name"]}
 💲 Ticker: {token["token_ticker"]}
 
-🔗 [Contract Address]({solscan_contract})
+🔗 Contract Address: `{token['token_mint_address']}`
+📊 [View on Solscan]({solscan_contract})
 🌐 [Website]({token["website_url"]})
 💬 [Join Telegram]({token["telegram_url"]})
 
@@ -88,7 +92,6 @@ def send_token_info(token):
 
 📢 Get in on the launch early!
 """
-
 
     payload = {
         "chat_id": CHAT_ID,
