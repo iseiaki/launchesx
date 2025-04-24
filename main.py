@@ -89,6 +89,7 @@ def send_token_info(token):
 🛠 Developer Fee: {token["developer_fee_percentage"]}%
 🔗 [Dev Wallet]({solscan_dev_wallet})
 📅 Distribution Interval: {token["distribution_interval"]} minutes
+🔒 Safu: {"yes" if token["is_safe"] else "no"}
 
 📢 Get in on the launch early!
 """
